@@ -1,63 +1,45 @@
 <?php
-// +----------------------------------------------------------------------
-// | thinkphp5 Addons [ WE CAN DO IT JUST THINK IT ]
-// +----------------------------------------------------------------------
-// | Copyright (c) 2016 http://www.zzstudio.net All rights reserved.
-// +----------------------------------------------------------------------
-// | Licensed ( http://www.apache.org/licenses/LICENSE-2.0 )
-// +----------------------------------------------------------------------
-// | Author: Byron Sampson <xiaobo.sun@qq.com>
-// +----------------------------------------------------------------------
+
 namespace think;
 
 use think\Config;
 use think\View;
-use think\Db;
 
 /**
  * 插件基类
  * Class Addons
- * @author Byron Sampson <xiaobo.sun@qq.com>
+ * @author  Byron Sampson <xiaobo.sun@qq.com>
  * @package think\addons
  */
 abstract class Addons
 {
-    /**
-     * 视图实例对象
-     * @var view
-     * @access protected
-     */
-    protected $view = null;
 
+    // 视图实例对象
+    protected $view = null;
     // 当前错误信息
     protected $error;
-
-    /**
-     * $info = [
-     *  'name'          => 'Test',
-     *  'title'         => '测试插件',
-     *  'description'   => '用于thinkphp5的插件扩展演示',
-     *  'status'        => 1,
-     *  'author'        => 'byron sampson',
-     *  'version'       => '0.1'
-     * ]
-     */
-    public $info = [];
+    // 插件目录
     public $addons_path = '';
-    public $config_file = '';
+    // 插件标识
+    protected $addonName = '';
+    // 插件配置作用域
+    protected $configRange = 'addonconfig';
+    // 插件信息作用域
+    protected $infoRange = 'addoninfo';
 
     /**
      * 架构函数
      * @access public
      */
-    public function __construct()
+    public function __construct($name = null)
     {
+        $name = is_null($name) ? $this->getName() : $name;
+
+        //设置插件标识
+        $this->addonName = $name;
+
         // 获取当前插件目录
-        $this->addons_path = ADDON_PATH . $this->getName() . DS;
-        // 读取当前插件配置信息
-        if (is_file($this->addons_path . 'config.php')) {
-            $this->config_file = $this->addons_path . 'config.php';
-        }
+        $this->addons_path = ADDON_PATH . $name . DS;
 
         // 初始化视图模型
         $config = ['view_path' => $this->addons_path];
@@ -71,40 +53,112 @@ abstract class Addons
     }
 
     /**
-     * 获取插件的配置数组
-     * @param string $name 可选模块名
-     * @return array|mixed|null
+     * 读取基础配置信息
+     * @param string $name
+     * @return array
      */
-    final public function getConfig($name = '')
+    final public function getInfo($name = '', $force = false)
     {
-        static $_config = array();
         if (empty($name)) {
             $name = $this->getName();
         }
-        if (isset($_config[$name])) {
-            return $_config[$name];
+        if (!$force) {
+            $info = Config::get($name, $this->infoRange);
+            if ($info) {
+                return $info;
+            }
         }
-        $map['name'] = $name;
-        $map['status'] = 1;
+        $info = [];
+        $info_file = $this->addons_path . 'info.ini';
+        if (is_file($info_file)) {
+            $info = Config::parse($info_file, '', $name, $this->infoRange);
+            $info['url'] = addon_url($name);
+        }
+        Config::set($name, $info, $this->infoRange);
+
+        return $info ? $info : [];
+    }
+
+    /**
+     * 获取插件的配置数组
+     * @param string $name 可选模块名
+     * @return array
+     */
+    final public function getConfig($name = '', $force = false)
+    {
+        if (empty($name)) {
+            $name = $this->getName();
+        }
+        if (!$force) {
+            $config = Config::get($name, $this->configRange);
+            if ($config) {
+                return $config;
+            }
+        }
         $config = [];
-        if (is_file($this->config_file)) {
-            $temp_arr = include $this->config_file;
+        $config_file = $this->addons_path . 'config.php';
+        if (is_file($config_file)) {
+            $temp_arr = include $config_file;
             foreach ($temp_arr as $key => $value) {
-                if ($value['type'] == 'group') {
-                    foreach ($value['options'] as $gkey => $gvalue) {
-                        foreach ($gvalue['options'] as $ikey => $ivalue) {
-                            $config[$ikey] = $ivalue['value'];
-                        }
-                    }
-                } else {
-                    $config[$key] = $temp_arr[$key]['value'];
-                }
+                $config[$value['name']] = $value['value'];
             }
             unset($temp_arr);
         }
-        $_config[$name] = $config;
+        Config::set($name, $config, $this->configRange);
 
         return $config;
+    }
+
+    /**
+     * 设置配置数据
+     * @param       $name
+     * @param array $value
+     * @return array
+     */
+    final public function setConfig($name = '', $value = [])
+    {
+        if (empty($name)) {
+            $name = $this->getName();
+        }
+        $config = $this->getConfig($name);
+        $config = array_merge($config, $value);
+        Config::set($name, $config, $this->configRange);
+        return $config;
+    }
+
+    /**
+     * 设置插件信息数据
+     * @param       $name
+     * @param array $value
+     * @return array
+     */
+    final public function setInfo($name = '', $value = [])
+    {
+        if (empty($name)) {
+            $name = $this->getName();
+        }
+        $info = $this->getInfo($name);
+        $info = array_merge($info, $value);
+        Config::set($name, $info, $this->infoRange);
+        return $info;
+    }
+
+    /**
+     * 获取完整配置列表
+     * @param string $name
+     * @return array
+     */
+    final public function getFullConfig($name = '')
+    {
+        $fullConfigArr = [];
+        if (empty($name)) {
+            $name = $this->getName();
+        }
+        $config_file = $this->addons_path . 'config.php';
+        if (is_file($config_file)) {
+            $fullConfigArr = include $config_file;
+        }
+        return $fullConfigArr;
     }
 
     /**
@@ -113,19 +167,32 @@ abstract class Addons
      */
     final public function getName()
     {
+        if ($this->addonName) {
+            return $this->addonName;
+        }
         $data = explode('\\', get_class($this));
         return strtolower(array_pop($data));
     }
 
     /**
-     * 检查配置信息是否完整
+     * 设置插件标识
+     * @param $name
+     */
+    final public function setName($name)
+    {
+        $this->addonName = $name;
+    }
+
+    /**
+     * 检查基础配置信息是否完整
      * @return bool
      */
     final public function checkInfo()
     {
-        $info_check_keys = ['name', 'title', 'description', 'status', 'author', 'version'];
+        $info = $this->getInfo();
+        $info_check_keys = ['name', 'title', 'intro', 'author', 'version', 'state'];
         foreach ($info_check_keys as $value) {
-            if (!array_key_exists($value, $this->info)) {
+            if (!array_key_exists($value, $info)) {
                 return false;
             }
         }
@@ -136,9 +203,9 @@ abstract class Addons
      * 加载模板和页面输出 可以返回输出内容
      * @access public
      * @param string $template 模板文件名或者内容
-     * @param array $vars 模板输出变量
-     * @param array $replace 替换内容
-     * @param array $config 模板参数
+     * @param array  $vars     模板输出变量
+     * @param array  $replace  替换内容
+     * @param array  $config   模板参数
      * @return mixed
      * @throws \Exception
      */
@@ -157,9 +224,9 @@ abstract class Addons
      * 渲染内容输出
      * @access public
      * @param string $content 内容
-     * @param array $vars 模板输出变量
-     * @param array $replace 替换内容
-     * @param array $config 模板参数
+     * @param array  $vars    模板输出变量
+     * @param array  $replace 替换内容
+     * @param array  $config  模板参数
      * @return mixed
      */
     public function display($content, $vars = [], $replace = [], $config = [])
@@ -174,7 +241,7 @@ abstract class Addons
      * 渲染内容输出
      * @access public
      * @param string $content 内容
-     * @param array $vars 模板输出变量
+     * @param array  $vars    模板输出变量
      * @return mixed
      */
     public function show($content, $vars = [])
@@ -188,7 +255,7 @@ abstract class Addons
     /**
      * 模板变量赋值
      * @access protected
-     * @param mixed $name 要显示的模板变量
+     * @param mixed $name  要显示的模板变量
      * @param mixed $value 变量的值
      * @return void
      */

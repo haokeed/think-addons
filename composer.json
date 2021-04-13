@@ -4,7 +4,12 @@
     "homepage": "https://github.com/haokeed/think-addons",
     "license": "Apache-2.0",
     "minimum-stability": "dev",
+    "version": "2.1.1",
     "authors": [
+        {
+            "name": "haokeed",
+            "email": "390065583@qq.com"
+        },
         {
             "name": "xiaobo.sun",
             "email": "xiaobo.sun@qq.com"
@@ -14,7 +19,9 @@
         "issues": "https://github.com/haokeed/think-addons/issues"
     },
     "require": {
-        "php": ">=5.4.0",
+        "php": ">=7.0.0",
+        "nelexa/zip": "^3.3",
+        "symfony/var-exporter": "^4.4.13",
         "topthink/think-helper": ">=1.0.4",
         "topthink/think-installer": ">=1.0.10"
     },
