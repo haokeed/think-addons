@@ -22,44 +22,64 @@ class Service
 {
 
     /**
-     * 远程下载插件
+     * 下载插件
      *
-     * @param string $name   插件名称
-     * @param array  $extend 扩展参数
+     * @param string $name 插件名称
+     * @param array $extend 扩展参数
+     * @param string $local 本地源 如果是null 就表示远程下载，如果不是Null就是对应的目标目录
      * @return  string
      */
-    public static function download($name, $extend = [])
+    public static function download($name, $extend = [], $local = null)
     {
         $addonsTempDir = self::getAddonsBackupDir();
         $tmpFile = $addonsTempDir . $name . ".zip";
-        try {
-            $client = self::getClient();
-            $response = $client->get('/addon/download', ['query' => array_merge(['name' => $name], $extend)]);
-            $body = $response->getBody();
-            $content = $body->getContents();
-            if (substr($content, 0, 1) === '{') {
-                $json = (array)json_decode($content, true);
-
-                //如果传回的是一个下载链接,则再次下载
-                if ($json['data'] && isset($json['data']['url'])) {
-                    $response = $client->get($json['data']['url']);
-                    $body = $response->getBody();
-                    $content = $body->getContents();
-                } else {
-                    //下载返回错误，抛出异常
-                    throw new AddonException($json['msg'], $json['code'], $json['data']);
+        if ($local != null) {
+            try {
+                $version = empty($extend["version"]) ? "last" : $extend["version"];
+                $source = rtrim($local, DS) . DS . $name . DS . $name . "_" . $version . ".zip";
+                if (!is_file($source)) {
+                    throw new AddonException("不存在文件:{$source}", 404, []);
                 }
+                // 本地加载
+                if (!@copy($source, $tmpFile)) {
+                    throw new AddonException("加载失败:{$source}", 500, []);
+                }
+                return $tmpFile;
+            } catch (TransferException $e) {
+                throw new Exception("Addon package download failed");
             }
-        } catch (TransferException $e) {
-            throw new Exception("Addon package download failed");
-        }
+            throw new Exception("No permission to write temporary files");
+        } else {
+            // 远程加载
+            try {
+                $client = self::getClient();
+                $response = $client->get('/addon/download', ['query' => array_merge(['name' => $name], $extend)]);
+                $body = $response->getBody();
+                $content = $body->getContents();
+                if (substr($content, 0, 1) === '{') {
+                    $json = (array)json_decode($content, true);
 
-        if ($write = fopen($tmpFile, 'w')) {
-            fwrite($write, $content);
-            fclose($write);
-            return $tmpFile;
+                    //如果传回的是一个下载链接,则再次下载
+                    if ($json['data'] && isset($json['data']['url'])) {
+                        $response = $client->get($json['data']['url']);
+                        $body = $response->getBody();
+                        $content = $body->getContents();
+                    } else {
+                        //下载返回错误，抛出异常
+                        throw new AddonException($json['msg'], $json['code'], $json['data']);
+                    }
+                }
+            } catch (TransferException $e) {
+                throw new Exception("Addon package download failed");
+            }
+
+            if ($write = fopen($tmpFile, 'w')) {
+                fwrite($write, $content);
+                fclose($write);
+                return $tmpFile;
+            }
+            throw new Exception("No permission to write temporary files");
         }
-        throw new Exception("No permission to write temporary files");
     }
 
     /**
@@ -105,7 +125,7 @@ class Service
     /**
      * 离线安装
      * @param string $file 插件压缩包
-     * @param array  $extend
+     * @param array $extend
      */
     public static function local($file, $extend = [])
     {
@@ -345,26 +365,36 @@ class Service
 
     /**
      * 刷新插件缓存文件
-     *
-     * @return  boolean
-     * @throws  Exception
+     * @return bool|void
+     * @throws Exception
+     * @throws \Symfony\Component\VarExporter\Exception\ExceptionInterface
      */
     public static function refresh()
     {
-        //刷新addons.js
-        $addons = get_addon_list();
+        //-------region 插件addons.js内容刷新写入----//
+        $addons = get_addon_list();//获取所有插件
         $bootstrapArr = [];
+        // 轮询所有启动的插件中的bootstrap.js文件,
         foreach ($addons as $name => $addon) {
+
             $bootstrapFile = self::getBootstrapFile($name);
             if ($addon['state'] && is_file($bootstrapFile)) {
                 $bootstrapArr[] = file_get_contents($bootstrapFile);
             }
         }
+
+        # 获取插件js文件目录
         $addonsFile = ROOT_PATH . str_replace("/", DS, "public/assets/js/addons.js");
+
+        if (file_exists($addonsFile) && !is_really_writable($addonsFile)) {
+            throw new Exception(__("Unable to open file '%s' for writing", "addons.js"));
+        }
+
         if ($handle = fopen($addonsFile, 'w')) {
+            // 把所有模块中的bootstrap.js文件中的js代码进行拼接,加上define头尾,再重新写入addon.js文件中
             $tpl = <<<EOD
 define([], function () {
-    {__JS__}
+{__JS__}
 });
 EOD;
             fwrite($handle, str_replace("{__JS__}", implode("\n", $bootstrapArr), $tpl));
@@ -372,17 +402,20 @@ EOD;
         } else {
             throw new Exception(__("Unable to open file '%s' for writing", "addons.js"));
         }
+        //-------endregion---------//
 
-        Cache::clear("addons");
+        //-------region php 配置文件刷新写入----//
 
+
+        # 获取php插件配置文件
         $file = self::getExtraAddonsFile();
 
         $config = get_addon_autoload_config(true);
-        if ($config['autoload']) {
+        if ($config['autoload']) { // 有配置了自动加载, 就不配置了
             return;
         }
 
-        if (!is_really_writable($file)) {
+        if (file_exists($file) && !is_really_writable($file)) {
             throw new Exception(__("Unable to open file '%s' for writing", "addons.php"));
         }
 
@@ -392,33 +425,36 @@ EOD;
         } else {
             throw new Exception(__("Unable to open file '%s' for writing", "addons.php"));
         }
+        //-------endregion---------//
+
         return true;
     }
 
     /**
      * 安装插件
      *
-     * @param string  $name   插件名称
-     * @param boolean $force  是否覆盖
-     * @param array   $extend 扩展参数
+     * @param string $name 插件名称
+     * @param boolean $force 是否覆盖
+     * @param array $extend 扩展参数
+     * @param array $local 本地插件包路径
      * @return  boolean
      * @throws  Exception
      * @throws  AddonException
      */
-    public static function install($name, $force = false, $extend = [])
+    public static function install($name, $force = false, $extend = [], $local = null)
     {
         if (!$name || (is_dir(ADDON_PATH . $name) && !$force)) {
             throw new Exception('Addon already exists');
         }
 
-        // 远程下载插件
-        $tmpFile = Service::download($name, $extend);
+        // 加载插件
+        $tmpFile = Service::download($name, $extend, empty($local) ? null : $local);
 
         $addonDir = self::getAddonDir($name);
 
         try {
             // 解压插件压缩包到插件目录
-            Service::unzip($name);
+            $res = Service::unzip($name);
 
             // 检查插件是否完整
             Service::check($name);
@@ -474,7 +510,7 @@ EOD;
     /**
      * 卸载插件
      *
-     * @param string  $name
+     * @param string $name
      * @param boolean $force 是否强制卸载
      * @return  boolean
      * @throws  Exception
@@ -518,7 +554,7 @@ EOD;
 
     /**
      * 启用
-     * @param string  $name  插件名称
+     * @param string $name 插件名称
      * @param boolean $force 是否强制覆盖
      * @return  boolean
      */
@@ -609,7 +645,7 @@ EOD;
     /**
      * 禁用
      *
-     * @param string  $name  插件名称
+     * @param string $name 插件名称
      * @param boolean $force 是否强制禁用
      * @return  boolean
      * @throws  Exception
@@ -726,8 +762,8 @@ EOD;
     /**
      * 升级插件
      *
-     * @param string $name   插件名称
-     * @param array  $extend 扩展参数
+     * @param string $name 插件名称
+     * @param array $extend 扩展参数
      */
     public static function upgrade($name, $extend = [])
     {
@@ -812,7 +848,7 @@ EOD;
     /**
      * 读取或修改插件配置
      * @param string $name
-     * @param array  $changed
+     * @param array $changed
      * @return array
      */
     public static function config($name, $changed = [])
@@ -833,7 +869,7 @@ EOD;
     /**
      * 获取插件在全局的文件
      *
-     * @param string  $name         插件名称
+     * @param string $name 插件名称
      * @param boolean $onlyconflict 是否只返回冲突文件
      * @return  array
      */
@@ -971,15 +1007,15 @@ EOD;
     protected static function getClient()
     {
         $options = [
-            'base_uri'        => self::getServerUrl(),
-            'timeout'         => 30,
+            'base_uri' => self::getServerUrl(),
+            'timeout' => 30,
             'connect_timeout' => 30,
-            'verify'          => false,
-            'http_errors'     => false,
-            'headers'         => [
+            'verify' => false,
+            'http_errors' => false,
+            'headers' => [
                 'X-REQUESTED-WITH' => 'XMLHttpRequest',
-                'Referer'          => dirname(request()->root(true)),
-                'User-Agent'       => 'FastAddon',
+                'Referer' => dirname(request()->root(true)),
+                'User-Agent' => 'SchoolteAddon',
             ]
         ];
         static $client;
