@@ -273,6 +273,9 @@ function get_addon_class($name, $type = 'hook', $class = null)
         case 'controller':
             $namespace = "\\addons\\" . $name . "\\controller\\" . $class;
             break;
+        case 'api':
+            $namespace = "\\addons\\" . $name . "\\api\\" . $class;
+            break;
         default:
             $namespace = "\\addons\\" . $name . "\\" . $class;
     }

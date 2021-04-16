@@ -14,6 +14,15 @@ use think\Request;
  */
 class Route
 {
+    // 控制器目录名
+    private $controllerType = "controller";
+
+    public function __construct($controllerType = null)
+    {
+        if ($controllerType == 'api') {
+            $this->controllerType = "api";
+        }
+    }
 
     /**
      * 插件执行
@@ -51,7 +60,7 @@ class Route
             // 兼容旧版本行为,即将移除,不建议使用
             Hook::listen('addons_init', $request);
 
-            $class = get_addon_class($addon, 'controller', $controller);
+            $class = get_addon_class($addon, $this->controllerType, $controller);
             if (!$class) {
                 throw new HttpException(404, __('addon controller %s not found', Loader::parseName($controller, 1)));
             }

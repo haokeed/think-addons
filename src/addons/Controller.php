@@ -2,7 +2,6 @@
 
 namespace think\addons;
 
-use app\common\library\Auth;
 use think\Config;
 use think\Hook;
 use think\Lang;

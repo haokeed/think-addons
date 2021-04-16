@@ -533,7 +533,7 @@ EOD;
             }
         }
 
-        // 执行卸载脚本
+        // 执行卸载脚本 插件自身东西的卸载
         try {
             $class = get_addon_class($name);
             if (class_exists($class)) {
@@ -665,7 +665,7 @@ EOD;
             Service::noconflict($name);
         }
 
-        if (config('schoolte.backup_global_files')) {
+        if (config('schoolte.backup_global_files')) {//插件启用禁用时是否备份对应的全局文件
             //仅备份修改过的文件
             $conflictFiles = Service::getGlobalFiles($name, true);
             if ($conflictFiles) {
@@ -684,10 +684,13 @@ EOD;
             }
         }
 
+        // 获取原先的配置文件
         $config = Service::config($name);
 
+        // 获取所在的陌路
         $addonDir = self::getAddonDir($name);
-        //插件资源目录
+
+        // 插件资源目录
         $destAssetsDir = self::getDestAssetsDir($name);
 
         // 移除插件全局文件
@@ -735,7 +738,7 @@ EOD;
         }
 
         $info = get_addon_info($name);
-        $info['state'] = 0;
+        $info['state'] = 0;//插件配置改为禁用
         unset($info['url']);
 
         set_addon_info($name, $info);
@@ -765,23 +768,25 @@ EOD;
      * @param string $name 插件名称
      * @param array $extend 扩展参数
      */
-    public static function upgrade($name, $extend = [])
+    public static function upgrade($name, $extend = [], $local = null)
     {
-        $info = get_addon_info($name);
+        $info = get_addon_info($name);// 获取插件基础信息
         if ($info['state']) {
             throw new Exception(__('Please disable addon first'));
         }
-        $config = get_addon_config($name);
+
+        $config = get_addon_config($name);// 获取插件配置
         if ($config) {
             //备份配置
         }
 
         // 远程下载插件
-        $tmpFile = Service::download($name, $extend);
+        $tmpFile = Service::download($name, $extend, empty($local) ? null : $local);
 
         // 备份插件文件
         Service::backup($name);
 
+        // 插件安装陌路
         $addonDir = self::getAddonDir($name);
 
         // 删除插件目录下的application和public
