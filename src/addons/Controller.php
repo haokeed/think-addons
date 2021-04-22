@@ -2,6 +2,7 @@
 
 namespace think\addons;
 
+use app\common\library\Auth;
 use think\Config;
 use think\Hook;
 use think\Lang;
@@ -34,6 +35,12 @@ class Controller extends \think\Controller
      * @var array
      */
     protected $noNeedRight = ['*'];
+
+    /**
+     * 允许使用模块的用户角色
+     * @var array
+     */
+    protected $allowUserTypes = [];
 
     /**
      * 权限Auth
@@ -122,14 +129,23 @@ class Controller extends \think\Controller
             $this->auth->init($token);
             //检测是否登录
             if (!$this->auth->isLogin()) {
-                $this->error(__('Please login first'), 'index/user/login');
+                $configLogin = config("login");
+                if (is_callable($configLogin)) {
+                    $this->error(__('Please login first'), $configLogin());
+                } elseif (is_string($configLogin)) {
+                    $this->error(__('Please login first'), $configLogin);
+                } else {
+                    $this->error(__('Please login first'), 'index/user/login');
+                }
+
             }
             // 判断是否需要验证权限
             if (!$this->auth->match($this->noNeedRight)) {
                 // 判断控制器和方法判断是否有对应权限
-                if (!$this->auth->check($path)) {
+                if (!$this->auth->check($this->allowUserTypes)) {
                     $this->error(__('You have no permission'));
                 }
+                $this->checkAfterAction();
             }
         } else {
             // 如果有传递token才验证是否登录状态
@@ -147,23 +163,29 @@ class Controller extends \think\Controller
 
         $site = Config::get("site");
 
-        $upload = \app\common\model\Config::upload();
+        //$upload = \app\common\model\Config::upload();
 
         // 上传信息配置后
-        Hook::listen("upload_config_init", $upload);
-        Config::set('upload', array_merge(Config::get('upload'), $upload));
+        //Hook::listen("upload_config_init", $upload);
+        //Config::set('upload', array_merge(Config::get('upload'), $upload));
 
         // 加载当前控制器语言包
         $this->assign('site', $site);
+    }
+
+    protected function checkAfterAction()
+    {
+        // 权限验证方法
+        // 是放在系统权限验证之后
     }
 
     /**
      * 加载模板输出
      * @access protected
      * @param string $template 模板文件名
-     * @param array  $vars     模板输出变量
-     * @param array  $replace  模板替换
-     * @param array  $config   模板参数
+     * @param array $vars 模板输出变量
+     * @param array $replace 模板替换
+     * @param array $config 模板参数
      * @return mixed
      */
     protected function fetch($template = '', $vars = [], $replace = [], $config = [])
