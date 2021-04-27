@@ -301,6 +301,7 @@ class Service
         if (!$name || !is_dir(ADDON_PATH . $name)) {
             throw new Exception('Addon not exists');
         }
+
         $addonClass = get_addon_class($name);
         if (!$addonClass) {
             throw new Exception("The addon file does not exist");
@@ -452,6 +453,7 @@ EOD;
 
         $addonDir = self::getAddonDir($name);
 
+
         try {
             // 解压插件压缩包到插件目录
             $res = Service::unzip($name);
@@ -602,14 +604,14 @@ EOD;
             copydirs($sourceAssetsDir, $destAssetsDir);
         }
 
-        // 复制application和public到全局
+        // 复制apps和public到全局
         foreach (self::getCheckDirs() as $k => $dir) {
             if (is_dir($addonDir . $dir)) {
                 copydirs($addonDir . $dir, ROOT_PATH . $dir);
             }
         }
 
-        //插件纯净模式时将插件目录下的application、public和assets删除
+        //插件纯净模式时将插件目录下的apps、public和assets删除
         if (config('schoolte.addon_pure_mode')) {
             // 删除插件目录已复制到全局的文件
             @rmdirs($sourceAssetsDir);
@@ -881,10 +883,13 @@ EOD;
     public static function getGlobalFiles($name, $onlyconflict = false)
     {
         $list = [];
+        // 插件目录
         $addonDir = self::getAddonDir($name);
+        // 校验目录
         $checkDirList = self::getCheckDirs();
         $checkDirList = array_merge($checkDirList, ['assets']);
 
+        // 存放资源文件的目录
         $assetDir = self::getDestAssetsDir($name);
 
         // 扫描插件目录是否有覆盖的文件
@@ -1000,7 +1005,7 @@ EOD;
     protected static function getCheckDirs()
     {
         return [
-            'application',
+            'apps',
             'public'
         ];
     }
